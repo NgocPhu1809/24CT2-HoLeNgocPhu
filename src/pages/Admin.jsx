@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { books as defaultBooks } from "../data/books";
+import { api } from "../api";
 
 function Admin({ user, onLogout }) {
   // ================================
@@ -24,6 +25,9 @@ function Admin({ user, onLogout }) {
   // DANH SÁCH KHÁCH HÀNG
   // ================================
   const [customers, setCustomers] = useState([]);
+  const [orders, setOrders] = useState(() =>
+    JSON.parse(localStorage.getItem("shopbooks_orders") || "[]")
+  );
 
   // ================================
   // FORM SÁCH
@@ -61,6 +65,35 @@ function Admin({ user, onLogout }) {
 
     setCustomers(savedUsers);
   }, []);
+
+  useEffect(() => {
+    const refreshOrders = () =>
+      setOrders(JSON.parse(localStorage.getItem("shopbooks_orders") || "[]"));
+    window.addEventListener("focus", refreshOrders);
+    api.orders().then(setOrders).catch(() => {});
+    return () => window.removeEventListener("focus", refreshOrders);
+  }, []);
+
+  const updateOrderStatus = (orderId, status) => {
+    const updatedOrders = orders.map((order) =>
+      order.id === orderId ? { ...order, status } : order
+    );
+    setOrders(updatedOrders);
+    localStorage.setItem("shopbooks_orders", JSON.stringify(updatedOrders));
+    api.updateOrderStatus(orderId, status).catch(() =>
+      window.showToast?.("Chưa thể đồng bộ MySQL. Đơn vẫn được lưu cục bộ.", "error")
+    );
+    window.showToast?.(
+      status === "Đã duyệt" ? "Đã duyệt đơn hàng." : "Đã từ chối đơn hàng."
+    );
+  };
+
+  const updateStock = (bookId, stock) => {
+    setBooks((currentBooks) => currentBooks.map((book) =>
+      book.id === bookId ? { ...book, stock: Math.max(0, Number(stock) || 0) } : book
+    ));
+    window.showToast?.("Đã cập nhật hàng tồn kho.");
+  };
 
   // ================================
   // XÓA FORM
@@ -104,17 +137,17 @@ function Admin({ user, onLogout }) {
     e.preventDefault();
 
     if (!bookName.trim()) {
-      alert("Vui lòng nhập tên sách!");
+      window.showToast?.("Vui lòng nhập tên sách!", "error");
       return;
     }
 
     if (!price || Number(price) <= 0) {
-      alert("Vui lòng nhập giá sách hợp lệ!");
+      window.showToast?.("Vui lòng nhập giá sách hợp lệ!", "error");
       return;
     }
 
     if (!image.trim()) {
-      alert("Vui lòng nhập link hình ảnh!");
+      window.showToast?.("Vui lòng nhập link hình ảnh!", "error");
       return;
     }
 
@@ -139,7 +172,7 @@ function Admin({ user, onLogout }) {
 
       setBooks(updatedBooks);
 
-      alert("Cập nhật sách thành công!");
+      window.showToast?.("Cập nhật sách thành công!");
 
       clearForm();
       setActiveMenu("books");
@@ -164,7 +197,7 @@ function Admin({ user, onLogout }) {
       newBook,
     ]);
 
-    alert("Thêm sách thành công!");
+    window.showToast?.("Thêm sách thành công!");
 
     clearForm();
     setActiveMenu("books");
@@ -196,7 +229,7 @@ function Admin({ user, onLogout }) {
       )
     );
 
-    alert("Xóa sách thành công!");
+    window.showToast?.("Xóa sách thành công!");
   };
 
   // ================================
@@ -223,7 +256,7 @@ function Admin({ user, onLogout }) {
       JSON.stringify(newCustomers)
     );
 
-    alert("Xóa tài khoản thành công!");
+    window.showToast?.("Xóa tài khoản thành công!");
   };
 
   // ================================
@@ -256,6 +289,14 @@ function Admin({ user, onLogout }) {
       " ₫"
     );
   };
+  const orderQuantity = (order) =>
+    (order.items || []).reduce((sum, item) => sum + Number(item.quantity || 0), 0);
+  const totalRevenue = orders
+    .filter((order) => !["Đã hủy", "Từ chối"].includes(order.status))
+    .reduce((sum, order) => sum + Number(order.total || 0), 0);
+  const approvedRevenue = orders
+    .filter((order) => ["Đã duyệt", "Đang giao", "Đã giao"].includes(order.status))
+    .reduce((sum, order) => sum + Number(order.total || 0), 0);
 
   // ================================
   // FORM DÙNG CHUNG
@@ -694,6 +735,30 @@ function Admin({ user, onLogout }) {
             <span>Khách hàng</span>
           </button>
 
+          <button
+            onClick={() => { clearForm(); setActiveMenu("orders"); }}
+            style={menuStyle(activeMenu === "orders")}
+          >
+            <span>📦</span>
+            <span>Quản lý đơn hàng</span>
+          </button>
+
+          <button
+            onClick={() => { clearForm(); setActiveMenu("revenue"); }}
+            style={menuStyle(activeMenu === "revenue")}
+          >
+            <span>📈</span>
+            <span>Doanh thu</span>
+          </button>
+
+          <button
+            onClick={() => { clearForm(); setActiveMenu("inventory"); }}
+            style={menuStyle(activeMenu === "inventory")}
+          >
+            <span>🏷️</span>
+            <span>Hàng tồn kho</span>
+          </button>
+
           {/* ĐĂNG XUẤT */}
           <button
             type="button"
@@ -748,6 +813,12 @@ function Admin({ user, onLogout }) {
 
             {activeMenu === "customers" &&
               "Khách hàng"}
+            {activeMenu === "orders" &&
+              "Quản lý đơn hàng"}
+            {activeMenu === "revenue" &&
+              "Doanh thu"}
+            {activeMenu === "inventory" &&
+              "Hàng tồn kho"}
           </h1>
 
           <p
@@ -1105,6 +1176,32 @@ function Admin({ user, onLogout }) {
             <BookForm />
           )}
 
+          {activeMenu === "orders" && (
+            <div style={panelStyle}>
+              <div style={panelHeaderStyle}>
+                <div><h2 style={{ margin: 0 }}>📦 Đơn hàng khách đã đặt</h2><p style={panelDescriptionStyle}>Theo dõi, duyệt hoặc từ chối đơn hàng đang chờ xử lý.</p></div>
+                <span style={countBadgeStyle}>{orders.length} đơn hàng</span>
+              </div>
+              <div style={{ overflowX: "auto" }}>
+                <table style={tableStyle}><thead><tr style={{ background: "#f8f8f8" }}><th style={thStyle}>Mã đơn</th><th style={thStyle}>Khách hàng</th><th style={thStyle}>Thời gian đặt</th><th style={thStyle}>Số lượng sách</th><th style={thStyle}>Tổng tiền</th><th style={thStyle}>Trạng thái</th><th style={thStyle}>Thao tác</th></tr></thead>
+                  <tbody>{orders.length === 0 ? <tr><td colSpan="7" style={{ ...tdStyle, textAlign: "center", color: "#777", padding: "40px" }}>Chưa có đơn hàng nào.</td></tr> : [...orders].reverse().map((order) => <tr key={order.id} style={{ borderTop: "1px solid #eee" }}>
+                    <td style={tdStyle}><strong>#{order.id}</strong></td><td style={tdStyle}><strong>{order.customer || "Khách hàng"}</strong><br /><small style={{ color: "#777" }}>{order.phone || order.customerEmail || ""}</small></td><td style={tdStyle}>{order.createdAt || "Chưa có thời gian"}</td><td style={tdStyle}>{orderQuantity(order)} cuốn</td><td style={tdStyle}><strong>{formatPrice(order.total)}</strong></td><td style={tdStyle}><span style={statusStyle(order.status)}>{order.status || "Chờ xử lý"}</span></td>
+                    <td style={tdStyle}>{(order.status || "Chờ xử lý") === "Chờ xử lý" ? <div style={{ display: "flex", gap: "7px" }}><button onClick={() => updateOrderStatus(order.id, "Đã duyệt")} style={approveButtonStyle}>✓ Duyệt</button><button onClick={() => updateOrderStatus(order.id, "Từ chối")} style={rejectButtonStyle}>✕ Từ chối</button></div> : <span style={{ color: "#777" }}>Đã xử lý</span>}</td>
+                  </tr>)}</tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {activeMenu === "revenue" && (
+            <><div style={revenueGridStyle}><RevenueCard icon="💰" label="Tổng giá trị đơn hàng" value={formatPrice(totalRevenue)} description={orders.length + " đơn hàng đã tiếp nhận"} /><RevenueCard icon="✅" label="Doanh thu đã duyệt" value={formatPrice(approvedRevenue)} description="Từ các đơn đã duyệt hoặc đang giao" /><RevenueCard icon="⏳" label="Chờ xử lý" value={orders.filter((order) => (order.status || "Chờ xử lý") === "Chờ xử lý").length + " đơn"} description="Cần được kiểm tra và phản hồi" /></div>
+            <div style={panelStyle}><div style={panelHeaderStyle}><div><h2 style={{ margin: 0 }}>Tổng quan doanh thu theo đơn</h2><p style={panelDescriptionStyle}>Không tính các đơn đã hủy hoặc từ chối.</p></div></div><div style={{ overflowX: "auto" }}><table style={tableStyle}><thead><tr style={{ background: "#f8f8f8" }}><th style={thStyle}>Mã đơn</th><th style={thStyle}>Ngày đặt</th><th style={thStyle}>Khách hàng</th><th style={thStyle}>Số tiền</th><th style={thStyle}>Trạng thái</th></tr></thead><tbody>{[...orders].reverse().filter((order) => !["Đã hủy", "Từ chối"].includes(order.status)).map((order) => <tr key={order.id} style={{ borderTop: "1px solid #eee" }}><td style={tdStyle}>#{order.id}</td><td style={tdStyle}>{order.createdAt}</td><td style={tdStyle}>{order.customer}</td><td style={tdStyle}><strong>{formatPrice(order.total)}</strong></td><td style={tdStyle}><span style={statusStyle(order.status)}>{order.status || "Chờ xử lý"}</span></td></tr>)}{orders.length === 0 && <tr><td colSpan="5" style={{ ...tdStyle, textAlign: "center" }}>Chưa có dữ liệu doanh thu.</td></tr>}</tbody></table></div></div></>
+          )}
+
+          {activeMenu === "inventory" && (
+            <div style={panelStyle}><div style={panelHeaderStyle}><div><h2 style={{ margin: 0 }}>🏷️ Quản lý hàng tồn kho</h2><p style={panelDescriptionStyle}>Cập nhật số lượng tồn cho từng đầu sách.</p></div><span style={countBadgeStyle}>{books.reduce((sum, book) => sum + Number(book.stock || 0), 0)} cuốn tồn</span></div><div style={{ overflowX: "auto" }}><table style={tableStyle}><thead><tr style={{ background: "#f8f8f8" }}><th style={thStyle}>Sách</th><th style={thStyle}>Danh mục</th><th style={thStyle}>Giá</th><th style={thStyle}>Số lượng tồn</th><th style={thStyle}>Tình trạng</th></tr></thead><tbody>{books.map((book) => { const stock = Number(book.stock || 0); return <tr key={book.id} style={{ borderTop: "1px solid #eee" }}><td style={tdStyle}><strong>{book.name}</strong></td><td style={tdStyle}>{book.category}</td><td style={tdStyle}>{formatPrice(book.price)}</td><td style={tdStyle}><input aria-label={"Số lượng tồn " + book.name} type="number" min="0" defaultValue={stock} onBlur={(event) => updateStock(book.id, event.target.value)} style={stockInputStyle} /></td><td style={tdStyle}><span style={inventoryStatusStyle(stock)}>{stock === 0 ? "Hết hàng" : stock < 5 ? "Sắp hết" : "Còn hàng"}</span></td></tr>; })}</tbody></table></div></div>
+          )}
+
           {/* =================================
               KHÁCH HÀNG
           ================================= */}
@@ -1335,6 +1432,15 @@ function Admin({ user, onLogout }) {
   );
 }
 
+function RevenueCard({ icon, label, value, description }) {
+  return (
+    <div style={statCardStyle}>
+      <div style={{ fontSize: "35px" }}>{icon}</div>
+      <div><div style={{ color: "#777", marginBottom: "5px" }}>{label}</div><strong style={{ fontSize: "23px" }}>{value}</strong><small style={{ display: "block", color: "#999", marginTop: "7px" }}>{description}</small></div>
+    </div>
+  );
+}
+
 // ====================================
 // STYLE
 // ====================================
@@ -1384,6 +1490,100 @@ const statCardStyle = {
   boxShadow:
     "0 5px 20px rgba(0,0,0,0.06)",
 };
+
+const panelStyle = {
+  background: "#fff",
+  borderRadius: "15px",
+  boxShadow: "0 5px 20px rgba(0,0,0,0.06)",
+  overflow: "hidden",
+};
+
+const panelHeaderStyle = {
+  padding: "25px",
+  display: "flex",
+  justifyContent: "space-between",
+  alignItems: "center",
+  gap: "20px",
+};
+
+const panelDescriptionStyle = {
+  margin: "6px 0 0",
+  color: "#777",
+};
+
+const countBadgeStyle = {
+  background: "#fff1f1",
+  color: "#d62828",
+  padding: "8px 12px",
+  borderRadius: "20px",
+  fontSize: "13px",
+  fontWeight: "600",
+  whiteSpace: "nowrap",
+};
+
+const tableStyle = {
+  width: "100%",
+  borderCollapse: "collapse",
+};
+
+const revenueGridStyle = {
+  display: "grid",
+  gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
+  gap: "20px",
+  marginBottom: "25px",
+};
+
+const approveButtonStyle = {
+  padding: "7px 10px",
+  border: "none",
+  borderRadius: "6px",
+  background: "#dcfce7",
+  color: "#166534",
+  fontWeight: "600",
+  cursor: "pointer",
+};
+
+const rejectButtonStyle = {
+  padding: "7px 10px",
+  border: "none",
+  borderRadius: "6px",
+  background: "#fee2e2",
+  color: "#b91c1c",
+  fontWeight: "600",
+  cursor: "pointer",
+};
+
+const statusStyle = (status) => {
+  const currentStatus = status || "Chờ xử lý";
+  const styles = {
+    "Chờ xử lý": { background: "#fef3c7", color: "#92400e" },
+    "Đã duyệt": { background: "#dcfce7", color: "#166534" },
+    "Đang giao": { background: "#dbeafe", color: "#1d4ed8" },
+    "Đã giao": { background: "#dcfce7", color: "#166534" },
+    "Từ chối": { background: "#fee2e2", color: "#b91c1c" },
+    "Đã hủy": { background: "#fee2e2", color: "#b91c1c" },
+  };
+  return {
+    ...(styles[currentStatus] || styles["Chờ xử lý"]),
+    padding: "6px 9px",
+    borderRadius: "14px",
+    fontSize: "12px",
+    fontWeight: "600",
+    whiteSpace: "nowrap",
+  };
+};
+
+const stockInputStyle = {
+  width: "72px",
+  padding: "7px",
+  border: "1px solid #ddd",
+  borderRadius: "6px",
+  font: "inherit",
+};
+
+const inventoryStatusStyle = (stock) => ({
+  ...statusStyle(stock === 0 ? "Từ chối" : stock < 5 ? "Chờ xử lý" : "Đã duyệt"),
+});
 
 const thStyle = {
   padding: "15px",

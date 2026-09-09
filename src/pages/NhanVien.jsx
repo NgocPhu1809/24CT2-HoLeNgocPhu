@@ -112,7 +112,7 @@ function NhanVien({ user, onLogout }) {
       });
     }
 
-    alert(
+    window.showToast?.(
       `Đã cập nhật đơn ${orderId} thành "${newStatus}"`
     );
   };
@@ -157,7 +157,7 @@ function NhanVien({ user, onLogout }) {
 
     setSelectedOrder(null);
 
-    alert("Đã xóa đơn hàng!");
+    window.showToast?.("Đã xóa đơn hàng!");
   };
 
   // ==========================================
