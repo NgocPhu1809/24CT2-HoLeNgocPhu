@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { api } from "../api";
 
 function DangNhap({
   onBack,
@@ -9,7 +10,7 @@ function DangNhap({
   const [matKhau, setMatKhau] = useState("");
   const [error, setError] = useState("");
 
-  const handleLogin = (e) => {
+  const handleLogin = async (e) => {
     e.preventDefault();
 
     setError("");
@@ -61,38 +62,12 @@ function DangNhap({
       return;
     }
 
-    // Lấy danh sách khách hàng đã đăng ký
-    const users =
-      JSON.parse(
-        localStorage.getItem(
-          "shopbooks_users"
-        )
-      ) || [];
-
-    // Tìm tài khoản khách hàng
-    const user = users.find(
-      (item) =>
-        item.email.toLowerCase() ===
-          email.trim().toLowerCase() &&
-        item.matKhau === matKhau
-    );
-
-    if (!user) {
-      setError(
-        "Email hoặc mật khẩu không chính xác."
-      );
-      return;
+    try {
+      const user = await api.login({ email, password: matKhau });
+      onLoginSuccess({ ...user, vaiTro: user.vaiTro || "KhachHang" });
+    } catch (requestError) {
+      setError(requestError.message);
     }
-
-    // Nếu tài khoản không có vai trò
-    // thì mặc định là khách hàng
-    const loginUser = {
-      ...user,
-      vaiTro:
-        user.vaiTro || "KhachHang",
-    };
-
-    onLoginSuccess(loginUser);
   };
 
   return (

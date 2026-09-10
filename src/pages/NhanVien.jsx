@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { api } from "../api";
 
 function NhanVien({ user, onLogout }) {
   // ==========================================
@@ -13,6 +14,8 @@ function NhanVien({ user, onLogout }) {
   // ==========================================
 
   const [orders, setOrders] = useState([]);
+
+  const [books, setBooks] = useState([]);
 
   // ==========================================
   // TÌM KIẾM
@@ -40,6 +43,17 @@ function NhanVien({ user, onLogout }) {
 
   useEffect(() => {
     loadOrders();
+
+    api.books()
+      .then((serverBooks) => {
+        if (!Array.isArray(serverBooks)) return;
+        setBooks(serverBooks);
+        localStorage.setItem("shopbooks_books", JSON.stringify(serverBooks));
+      })
+      .catch(() => {
+        const savedBooks = JSON.parse(localStorage.getItem("shopbooks_books") || "[]");
+        setBooks(savedBooks);
+      });
   }, []);
 
   const loadOrders = () => {
@@ -51,6 +65,13 @@ function NhanVien({ user, onLogout }) {
       );
 
     setOrders(savedOrders.reverse());
+    api.orders()
+      .then((serverOrders) => {
+        if (!Array.isArray(serverOrders)) return;
+        setOrders(serverOrders);
+        localStorage.setItem("shopbooks_orders", JSON.stringify(serverOrders));
+      })
+      .catch(() => {});
   };
 
   // ==========================================
@@ -65,23 +86,53 @@ function NhanVien({ user, onLogout }) {
     );
   };
 
+  const updateStock = async (bookId, stockValue) => {
+    const stock = Math.max(0, Number(stockValue) || 0);
+    const previousBooks = [...books];
+    const book = books.find((item) => item.id === bookId);
+
+    if (!book) return;
+
+    const updatedBook = { ...book, stock };
+    const updatedBooks = books.map((item) =>
+      item.id === bookId ? updatedBook : item
+    );
+
+    setBooks(updatedBooks);
+    localStorage.setItem("shopbooks_books", JSON.stringify(updatedBooks));
+
+    try {
+      await api.updateBook(bookId, updatedBook);
+      window.showToast?.(`Đã cập nhật tồn kho cho "${book.name}".`);
+    } catch (error) {
+      setBooks(previousBooks);
+      localStorage.setItem("shopbooks_books", JSON.stringify(previousBooks));
+      window.showToast?.("Chưa thể cập nhật hàng tồn kho.", "error");
+    }
+  };
+
   // ==========================================
   // CẬP NHẬT TRẠNG THÁI
   // ==========================================
 
-  const updateOrderStatus = (
+  const updateOrderStatus = async (
     orderId,
     newStatus
   ) => {
-    const savedOrders =
+    const previousOrders =
       JSON.parse(
         localStorage.getItem(
           "shopbooks_orders"
         ) || "[]"
       );
 
+    const currentOrders =
+      orders.length > 0
+        ? orders
+        : previousOrders;
+
     const updatedOrders =
-      savedOrders.map(
+      currentOrders.map(
         (order) =>
           order.id === orderId
             ? {
@@ -112,9 +163,54 @@ function NhanVien({ user, onLogout }) {
       });
     }
 
-    window.showToast?.(
-      `Đã cập nhật đơn ${orderId} thành "${newStatus}"`
-    );
+    try {
+      await api.updateOrderStatus(orderId, newStatus);
+
+      const refreshedOrders =
+        await api.orders();
+
+      if (
+        Array.isArray(refreshedOrders)
+      ) {
+        setOrders(refreshedOrders);
+        localStorage.setItem(
+          "shopbooks_orders",
+          JSON.stringify(refreshedOrders)
+        );
+
+        const refreshedOrder =
+          refreshedOrders.find(
+            (order) => order.id === orderId
+          );
+
+        if (refreshedOrder) {
+          setSelectedOrder(refreshedOrder);
+        }
+      }
+
+      window.showToast?.(
+        `Đã cập nhật đơn ${orderId} thành "${newStatus}"`
+      );
+    } catch (error) {
+      setOrders(
+        [...previousOrders].reverse()
+      );
+      const previousOrder =
+        previousOrders.find(
+          (order) => order.id === orderId
+        );
+      if (previousOrder) {
+        setSelectedOrder(previousOrder);
+      }
+      localStorage.setItem(
+        "shopbooks_orders",
+        JSON.stringify(previousOrders)
+      );
+      window.showToast?.(
+        "Chưa thể đồng bộ trạng thái lên MySQL.",
+        "error"
+      );
+    }
   };
 
   // ==========================================
@@ -151,6 +247,8 @@ function NhanVien({ user, onLogout }) {
       )
     );
 
+    api.deleteOrder(orderId).catch(() => {});
+
     setOrders(
       [...updatedOrders].reverse()
     );
@@ -171,7 +269,7 @@ function NhanVien({ user, onLogout }) {
 
       const matchSearch =
         !keyword ||
-        order.id
+        String(order.id || "")
           ?.toLowerCase()
           .includes(keyword) ||
         order.customer
@@ -470,6 +568,17 @@ function NhanVien({ user, onLogout }) {
 
           <button
             onClick={() => {
+              setActiveMenu("inventory");
+              setSelectedOrder(null);
+            }}
+            style={menuButton(activeMenu === "inventory")}
+          >
+            <span>🏷️</span>
+            <span>Hàng tồn kho</span>
+          </button>
+
+          <button
+            onClick={() => {
               loadOrders();
               setActiveMenu(
                 "orders"
@@ -549,10 +658,11 @@ function NhanVien({ user, onLogout }) {
                 "#222",
             }}
           >
-            {activeMenu ===
-            "stats"
+            {activeMenu === "stats"
               ? "Thống kê"
-              : "Quản lý đơn hàng"}
+              : activeMenu === "inventory"
+                ? "Hàng tồn kho"
+                : "Quản lý đơn hàng"}
           </h1>
 
           <p
@@ -577,6 +687,69 @@ function NhanVien({ user, onLogout }) {
               "35px",
           }}
         >
+
+          {activeMenu === "inventory" && (
+            <div style={inventoryPanelStyle}>
+              <div style={inventoryHeaderStyle}>
+                <div>
+                  <h2 style={{ margin: 0 }}>🏷️ Quản lý hàng tồn kho</h2>
+                  <p style={{ margin: "6px 0 0", color: "#777" }}>
+                    Cập nhật số lượng tồn cho từng đầu sách.
+                  </p>
+                </div>
+                <span style={inventoryCountStyle}>
+                  {books.reduce((sum, book) => sum + Number(book.stock || 0), 0)} cuốn tồn
+                </span>
+              </div>
+
+              <div style={{ overflowX: "auto" }}>
+                <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                  <thead>
+                    <tr style={{ background: "#f8f8f8" }}>
+                      <th style={thStyle}>Sách</th>
+                      <th style={thStyle}>Danh mục</th>
+                      <th style={thStyle}>Giá</th>
+                      <th style={thStyle}>Số lượng tồn</th>
+                      <th style={thStyle}>Tình trạng</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {books.map((book) => {
+                      const stock = Number(book.stock || 0);
+                      return (
+                        <tr key={book.id} style={{ borderTop: "1px solid #eee" }}>
+                          <td style={tdStyle}><strong>{book.name}</strong></td>
+                          <td style={tdStyle}>{book.category}</td>
+                          <td style={tdStyle}>{formatPrice(book.price)}</td>
+                          <td style={tdStyle}>
+                            <input
+                              aria-label={`Số lượng tồn ${book.name}`}
+                              type="number"
+                              min="0"
+                              value={stock}
+                              onChange={(event) => {
+                                const value = Math.max(0, Number(event.target.value) || 0);
+                                setBooks((currentBooks) => currentBooks.map((item) =>
+                                  item.id === book.id ? { ...item, stock: value } : item
+                                ));
+                              }}
+                              onBlur={(event) => updateStock(book.id, event.target.value)}
+                              style={stockInputStyle}
+                            />
+                          </td>
+                          <td style={tdStyle}>
+                            <span style={inventoryStatusStyle(stock)}>
+                              {stock === 0 ? "Hết hàng" : stock < 5 ? "Sắp hết" : "Còn hàng"}
+                            </span>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
 
           {/* ==================================
               THỐNG KÊ
@@ -1818,5 +1991,52 @@ const statusButtonStyle = {
   cursor: "pointer",
   fontWeight: "600",
 };
+
+const inventoryPanelStyle = {
+  background: "#fff",
+  borderRadius: "15px",
+  boxShadow: "0 5px 20px rgba(0,0,0,.06)",
+  overflow: "hidden",
+};
+
+const inventoryHeaderStyle = {
+  padding: "25px",
+  display: "flex",
+  justifyContent: "space-between",
+  alignItems: "center",
+  gap: "15px",
+  flexWrap: "wrap",
+};
+
+const inventoryCountStyle = {
+  padding: "8px 12px",
+  borderRadius: "16px",
+  background: "#fef3c7",
+  color: "#92400e",
+  fontWeight: "600",
+  fontSize: "13px",
+};
+
+const stockInputStyle = {
+  width: "72px",
+  padding: "7px",
+  border: "1px solid #ddd",
+  borderRadius: "6px",
+  font: "inherit",
+};
+
+const inventoryStatusStyle = (stock) => ({
+  display: "inline-block",
+  padding: "6px 9px",
+  borderRadius: "14px",
+  fontSize: "12px",
+  fontWeight: "600",
+  whiteSpace: "nowrap",
+  ...(stock === 0
+    ? { background: "#fee2e2", color: "#b91c1c" }
+    : stock < 5
+      ? { background: "#fef3c7", color: "#92400e" }
+      : { background: "#dcfce7", color: "#166534" }),
+});
 
 export default NhanVien;

@@ -43,3 +43,6 @@ CREATE TABLE IF NOT EXISTS order_items (
   quantity INT UNSIGNED NOT NULL,
   CONSTRAINT fk_order_items_order FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE CASCADE
 );
+
+INSERT IGNORE INTO users (full_name, email, password_hash, role)
+VALUES ('Nguyen Minh Anh', 'minh.anh@example.com', '$2b$10$7EqJtq98hPqEX7fNZaFWoO5rXk3qVYh5tW8r5X1s5D8QZ7Z6Y8Y9K', 'KhachHang');

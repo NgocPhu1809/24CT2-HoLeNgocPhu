@@ -45,9 +45,6 @@ function Admin({ user, onLogout }) {
   // ================================
   const [searchCustomer, setSearchCustomer] = useState("");
 
-  // ================================
-  // LƯU SÁCH
-  // ================================
   useEffect(() => {
     localStorage.setItem(
       "shopbooks_books",
@@ -55,15 +52,28 @@ function Admin({ user, onLogout }) {
     );
   }, [books]);
 
+  useEffect(() => {
+    api.books().then((serverBooks) => {
+      if (!Array.isArray(serverBooks)) return;
+      setBooks(serverBooks);
+      localStorage.setItem("shopbooks_books", JSON.stringify(serverBooks));
+    }).catch(() => {});
+  }, []);
+
   // ================================
   // ĐỌC KHÁCH HÀNG
   // ================================
   useEffect(() => {
-    const savedUsers = JSON.parse(
-      localStorage.getItem("shopbooks_users") || "[]"
-    );
-
+    const savedUsers = JSON.parse(localStorage.getItem("shopbooks_users") || "[]");
     setCustomers(savedUsers);
+
+    api.users()
+      .then((serverUsers) => {
+        if (!Array.isArray(serverUsers)) return;
+        setCustomers(serverUsers);
+        localStorage.setItem("shopbooks_users", JSON.stringify(serverUsers));
+      })
+      .catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -74,18 +84,30 @@ function Admin({ user, onLogout }) {
     return () => window.removeEventListener("focus", refreshOrders);
   }, []);
 
-  const updateOrderStatus = (orderId, status) => {
+  const updateOrderStatus = async (orderId, status) => {
+    const previousOrders = [...orders];
     const updatedOrders = orders.map((order) =>
       order.id === orderId ? { ...order, status } : order
     );
+
     setOrders(updatedOrders);
     localStorage.setItem("shopbooks_orders", JSON.stringify(updatedOrders));
-    api.updateOrderStatus(orderId, status).catch(() =>
-      window.showToast?.("Chưa thể đồng bộ MySQL. Đơn vẫn được lưu cục bộ.", "error")
-    );
-    window.showToast?.(
-      status === "Đã duyệt" ? "Đã duyệt đơn hàng." : "Đã từ chối đơn hàng."
-    );
+
+    try {
+      await api.updateOrderStatus(orderId, status);
+      const refreshedOrders = await api.orders();
+      if (Array.isArray(refreshedOrders)) {
+        setOrders(refreshedOrders);
+        localStorage.setItem("shopbooks_orders", JSON.stringify(refreshedOrders));
+      }
+      window.showToast?.(
+        status === "Đã duyệt" ? "Đã duyệt đơn hàng." : status === "Từ chối" ? "Đã từ chối đơn hàng." : `Đã cập nhật trạng thái thành "${status}".`
+      );
+    } catch (error) {
+      setOrders(previousOrders);
+      localStorage.setItem("shopbooks_orders", JSON.stringify(previousOrders));
+      window.showToast?.("Chưa thể đồng bộ MySQL. Đơn vẫn được lưu cục bộ.", "error");
+    }
   };
 
   const updateStock = (bookId, stock) => {
@@ -133,7 +155,7 @@ function Admin({ user, onLogout }) {
   // ================================
   // LƯU SÁCH
   // ================================
-  const handleSaveBook = (e) => {
+  const handleSaveBook = async (e) => {
     e.preventDefault();
 
     if (!bookName.trim()) {
@@ -155,16 +177,14 @@ function Admin({ user, onLogout }) {
     // SỬA
     // ================================
     if (editingBook) {
+      const bookData = {
+        name: bookName.trim(), category, price: Number(price), image: image.trim(),
+        description: description.trim(), stock: Number(editingBook.stock) || 0,
+      };
+      await api.updateBook(editingBook.id, bookData);
       const updatedBooks = books.map((book) => {
         if (book.id === editingBook.id) {
-          return {
-            ...book,
-            name: bookName.trim(),
-            category: category,
-            price: Number(price),
-            image: image.trim(),
-            description: description.trim(),
-          };
+          return { ...book, ...bookData };
         }
 
         return book;
@@ -184,13 +204,15 @@ function Admin({ user, onLogout }) {
     // THÊM
     // ================================
     const newBook = {
-      id: Date.now(),
       name: bookName.trim(),
       category: category,
       price: Number(price),
       image: image.trim(),
       description: description.trim(),
+      stock: 0,
     };
+    const createdBook = await api.createBook(newBook);
+    newBook.id = createdBook.id;
 
     setBooks((currentBooks) => [
       ...currentBooks,
@@ -228,6 +250,8 @@ function Admin({ user, onLogout }) {
         (item) => item.id !== id
       )
     );
+
+    api.deleteBook(id).catch(() => {});
 
     window.showToast?.("Xóa sách thành công!");
   };

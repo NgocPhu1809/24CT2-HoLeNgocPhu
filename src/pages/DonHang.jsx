@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { api } from "../api";
 
 function DonHang({ user, onBack }) {
   const [orders, setOrders] = useState([]);
@@ -9,18 +10,12 @@ function DonHang({ user, onBack }) {
   }, [user]);
 
   const loadOrders = () => {
-    const savedOrders = JSON.parse(
-      localStorage.getItem("shopbooks_orders") || "[]"
-    );
-
-    const myOrders = savedOrders.filter(
-      (order) =>
-        order.customerEmail === user?.email ||
-        (!order.customerEmail &&
-          order.customer === user?.hoTen)
-    );
-
-    setOrders(myOrders.reverse());
+    api.orders()
+      .then((serverOrders) => {
+        const myOrders = serverOrders.filter((order) => order.customerEmail === user?.email);
+        setOrders(myOrders);
+      })
+      .catch(() => setOrders([]));
   };
 
   const formatPrice = (price) => {

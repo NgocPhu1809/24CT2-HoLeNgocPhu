@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { api } from "../api";
 
 function DatHang({
   cart,
@@ -17,7 +18,7 @@ function DatHang({
     return Number(price).toLocaleString("vi-VN") + " đ";
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     setError("");
 
@@ -50,29 +51,13 @@ function DatHang({
       return;
     }
 
-    // Tạo mã đơn hàng
-    const orderCode =
-      "SB" + Date.now().toString().slice(-6);
-
-    // Tạo thông tin đơn hàng
     const newOrder = {
-      id: orderCode,
-
-      // Lưu email tài khoản để khách xem đúng đơn hàng của mình
       customerEmail: user?.email || "",
-
       customer: hoTen.trim(),
-
       phone: soDienThoai.trim(),
-
       address: diaChi.trim(),
-
       total: Number(total),
-
       payment,
-
-      status: "Chờ xử lý",
-
       items: cart.map((item) => ({
         id: item.id,
         name: item.name,
@@ -80,32 +65,22 @@ function DatHang({
         quantity: Number(item.quantity),
       })),
 
-      createdAt: new Date().toLocaleString("vi-VN"),
     };
 
-    // Lấy danh sách đơn hàng cũ
-    const oldOrders = JSON.parse(
-      localStorage.getItem("shopbooks_orders") || "[]"
-    );
-
-    // Thêm đơn hàng mới
-    const updatedOrders = [
-      ...oldOrders,
-      newOrder,
-    ];
-
-    // Lưu vào localStorage
-    localStorage.setItem(
-      "shopbooks_orders",
-      JSON.stringify(updatedOrders)
-    );
+    let createdOrder;
+    try {
+      createdOrder = await api.createOrder(newOrder);
+    } catch (requestError) {
+      setError(requestError.message);
+      return;
+    }
 
     // Xóa giỏ hàng
     localStorage.removeItem("shopbooks_cart");
 
     // Thông báo cho App
     if (onOrderSuccess) {
-      onOrderSuccess(newOrder);
+      onOrderSuccess({ ...newOrder, ...createdOrder });
     }
   };
 

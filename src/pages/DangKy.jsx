@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { api } from "../api";
 
 function DangKy({ onBack, onLogin }) {
   const [hoTen, setHoTen] = useState("");
@@ -10,7 +11,7 @@ function DangKy({ onBack, onLogin }) {
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
 
-  const handleRegister = (e) => {
+  const handleRegister = async (e) => {
     e.preventDefault();
 
     setError("");
@@ -47,53 +48,14 @@ function DangKy({ onBack, onLogin }) {
       return;
     }
 
-    // Lấy danh sách tài khoản đã đăng ký
-    const oldUsers =
-      JSON.parse(
-        localStorage.getItem(
-          "shopbooks_users"
-        )
-      ) || [];
-
-    // Kiểm tra email đã tồn tại
-    const emailExists = oldUsers.some(
-      (user) =>
-        user.email.toLowerCase() ===
-        email.toLowerCase()
-    );
-
-    if (emailExists) {
-      setError(
-        "Email này đã được đăng ký."
-      );
+    let newUser;
+    try {
+      newUser = await api.register({ fullName: hoTen, email, password: matKhau });
+    } catch (requestError) {
+      setError(requestError.message);
       return;
     }
-
-    // Tạo tài khoản khách hàng
-    const newUser = {
-      id: Date.now(),
-      hoTen: hoTen.trim(),
-      email: email.trim(),
-      matKhau: matKhau,
-      vaiTro: "KhachHang",
-      soDienThoai: "",
-    };
-
-    // Lưu tài khoản vào danh sách
-    localStorage.setItem(
-      "shopbooks_users",
-      JSON.stringify([
-        ...oldUsers,
-        newUser,
-      ])
-    );
-
-    // Lưu tài khoản hiện tại để tương thích
-    // với code cũ của project
-    localStorage.setItem(
-      "shopbooks_user",
-      JSON.stringify(newUser)
-    );
+    localStorage.setItem("shopbooks_user", JSON.stringify(newUser));
 
     setSuccess(
       "Đăng ký tài khoản SHOPBOOKS thành công!"
